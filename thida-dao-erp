@@ -1,0 +1,846 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, PieChart, Pie, Cell
+} from 'recharts';
+import { 
+  Truck, Package, DollarSign, TrendingUp, Users, Menu, MapPin, Camera, Bell, Tag, Search, UserCheck, Star, PlusCircle, Database, Calculator, LayoutDashboard, Save, Lock, Activity, Wrench, Recycle, Wallet, CreditCard, Gift, Fuel, Plus, Minus, XCircle, Settings, Edit3, FileText, CheckCircle, Receipt, Coins, Calendar, User, Printer, Download, AlertTriangle, X, LogOut, Navigation, Trash2
+} from 'lucide-react';
+
+// --- Firebase Imports ---
+import { initializeApp } from "firebase/app";
+import { 
+  getFirestore, collection, addDoc, updateDoc, doc, onSnapshot, setDoc, getDoc, deleteDoc, increment, query, orderBy 
+} from "firebase/firestore";
+import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
+
+// ------------------------------------------------------------------
+// {
+
+  apiKey: "AIzaSyCwOzO--s4GF49oxk6nAnacNoTJXwe0yf4",
+
+  authDomain: "thida-dao-erp-92ca8.firebaseapp.com",
+
+  projectId: "thida-dao-erp-92ca8",
+
+  storageBucket: "thida-dao-erp-92ca8.firebasestorage.app",
+
+  messagingSenderId: "61860227686",
+
+  appId: "1:61860227686:web:e1567ca5458f7a68305ba7",
+
+  measurementId: "G-3QZR30M5PQ"
+};
+// ------------------------------------------------------------------
+const firebaseConfig = {
+  apiKey: "AIzaSy...",
+  authDomain: "thida-dao-erp.firebaseapp.com",
+  projectId: "thida-dao-erp",
+  storageBucket: "thida-dao-erp.appspot.com",
+  messagingSenderId: "...",
+  appId: "..."
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const auth = getAuth(app);
+
+// --- Master Data (ค่าเริ่มต้นสำหรับระบบใหม่) ---
+const INITIAL_PRODUCTS = [
+  { id: 'p350', name: '350ml (12 ขวด)', cost: 15.00, weight: 4.5, minPrice: 18.00, targetPrice: 22, isReturnable: false, bom: { preform: 12, cap: 12, label: 12, film: 0.1 } },
+  { id: 'p600', name: '600ml (12 ขวด)', cost: 16.23, weight: 7.5, minPrice: 18.50, targetPrice: 22, isReturnable: false, bom: { preform: 12, cap: 12, label: 12, film: 0.12 } },
+  { id: 'p1500', name: '1500ml (6 ขวด)', cost: 19.83, weight: 9.2, minPrice: 22.00, targetPrice: 25, isReturnable: false, bom: { preform: 6, cap: 6, label: 6, film: 0.15 } },
+  { id: 'p189', name: 'ถัง 18.9L', cost: 1.50, weight: 19.5, minPrice: 7.00, targetPrice: 12, isReturnable: true, bom: { cap: 1, seal: 1 } },
+];
+
+const INITIAL_VEHICLES = {
+  pickup: { name: 'รถกระบะ', consumption: 10, capacity: 200, labor: 500, other: 200, maxWeight: 1500 },
+  trailer: { name: 'รถเทรลเลอร์', consumption: 2.5, capacity: 3400, labor: 2500, other: 1500, maxWeight: 32000 }
+};
+
+const EXPENSE_CATEGORIES = ['ค่าน้ำมัน', 'ค่าซ่อมบำรุง', 'ค่าแรง/เงินเดือน', 'ค่าอาหาร/เบี้ยเลี้ยง', 'ซื้อวัตถุดิบ', 'ค่าน้ำ/ค่าไฟ', 'อื่นๆ'];
+
+// --- Helper Hooks for Firebase ---
+// ดึงข้อมูลแบบ List (เช่น รายชื่อลูกค้า, รายการขาย)
+const useCollection = (collectionName) => {
+  const [data, setData] = useState([]);
+  useEffect(() => {
+    const q = query(collection(db, collectionName)); 
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const loadedData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setData(loadedData);
+    });
+    return () => unsubscribe();
+  }, [collectionName]);
+  return data;
+};
+
+// ดึงข้อมูลแบบ Document เดี่ยว (เช่น สต็อก, การตั้งค่า)
+const useDocument = (collectionName, docId, initialData) => {
+  const [data, setData] = useState(initialData);
+  useEffect(() => {
+    const docRef = doc(db, collectionName, docId);
+    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        setData(docSnap.data());
+      } else {
+        setDoc(docRef, initialData); // สร้างค่าเริ่มต้นถ้ายังไม่มี
+      }
+    });
+    return () => unsubscribe();
+  }, [collectionName, docId]);
+  return data;
+};
+
+// --- Login Screen ---
+const LoginScreen = ({ onLogin }) => {
+  const [showAdminPin, setShowAdminPin] = useState(false);
+  const [pin, setPin] = useState('');
+  const [error, setError] = useState('');
+
+  const handleAdminLogin = () => {
+    if (pin === '1234') onLogin('admin');
+    else setError('รหัสผ่านไม่ถูกต้อง');
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
+      <div className="bg-white p-8 rounded-3xl shadow-2xl max-w-sm w-full text-center">
+        <div className="flex justify-center mb-6">
+             <img src="/logo.png" alt="Logo" className="h-24 w-auto object-contain" onError={(e) => {e.target.onerror = null; e.target.src = "https://placehold.co/100x100?text=Logo";}} />
+        </div>
+        <h1 className="text-2xl font-bold text-slate-800 mb-2">THIDA DAO ERP Online</h1>
+        <p className="text-slate-500 mb-8 text-sm">ระบบออนไลน์ 100% (Cloud Mode)</p>
+        
+        {!showAdminPin ? (
+          <div className="space-y-3">
+            <button onClick={() => setShowAdminPin(true)} className="w-full p-4 bg-indigo-600 text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-indigo-700 transition-colors">
+              <Lock size={18}/> เข้าใช้งาน : เถ้าแก่ (Admin)
+            </button>
+            <button onClick={() => onLogin('driver')} className="w-full p-4 bg-slate-100 text-slate-600 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-slate-200 transition-colors">
+              <Truck size={18}/> เข้าใช้งาน : คนขับรถ (Driver)
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-4 animate-in fade-in zoom-in duration-300">
+            <div>
+              <p className="text-sm font-bold text-slate-700 mb-2">กรุณาใส่รหัสผ่าน (PIN)</p>
+              <input type="password" autoFocus className="w-full p-3 border-2 border-indigo-100 rounded-xl text-center text-2xl font-black text-indigo-800 tracking-widest focus:outline-none focus:border-indigo-500" placeholder="••••" value={pin} onChange={(e) => { setPin(e.target.value); setError(''); }} onKeyDown={(e) => e.key === 'Enter' && handleAdminLogin()} />
+              {error && <p className="text-red-500 text-xs mt-2 font-bold">{error}</p>}
+            </div>
+            <button onClick={handleAdminLogin} className="w-full p-3 bg-indigo-600 text-white rounded-xl font-bold">ยืนยันรหัสผ่าน</button>
+            <button onClick={() => { setShowAdminPin(false); setPin(''); setError(''); }} className="text-sm text-slate-400 underline">ย้อนกลับ</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// --- UI Components ---
+const StatCard = ({ title, value, icon, color }) => {
+  const themes = { blue: "bg-blue-50 text-blue-600", green: "bg-green-50 text-green-600", purple: "bg-purple-50 text-purple-600", orange: "bg-orange-50 text-orange-600", red: "bg-red-50 text-red-600" };
+  const displayValue = useMemo(() => {
+    if (typeof value === 'number') return `฿${value.toLocaleString()}`;
+    return value || '0';
+  }, [value]);
+  return (
+    <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition-all print:hidden">
+      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mb-4 ${themes[color]}`}>{icon}</div>
+      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{title}</p>
+      <h4 className="text-2xl font-black text-slate-800 mt-1">{displayValue}</h4>
+    </div>
+  );
+};
+
+const NavItem = ({ icon, label, active, onClick }) => (
+  <button onClick={onClick} className={`w-full flex items-center gap-3 p-4 rounded-2xl font-bold transition-all ${active ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'}`}>
+    {icon} <span className="text-sm">{label}</span>
+  </button>
+);
+
+// --- Main App ---
+function App() {
+  const [role, setRole] = useState(null);
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  // Authentication Anonymous
+  useEffect(() => {
+    signInAnonymously(auth).catch((error) => console.error("Auth Error:", error));
+  }, []);
+
+  // Sync Data from Firebase (Cloud)
+  const sales = useCollection('sales');
+  const customers = useCollection('customers');
+  const drivers = useCollection('drivers');
+  const expenses = useCollection('expenses');
+  const promotions = useCollection('promotions');
+  
+  // Single Config Docs
+  const inventory = useDocument('config', 'inventory', { p350: 0, p600: 0, p1500: 0, p189: 0 });
+  const rawMaterials = useDocument('config', 'rawMaterials', { preform: 5000, cap: 5000, label: 5000, film: 100, seal: 1000 });
+  const materialCosts = useDocument('config', 'materialCosts', { preform: 0.6, cap: 0.1, label: 0.1, film: 40, seal: 0.05 });
+  const products = useDocument('config', 'products', { list: INITIAL_PRODUCTS }).list || INITIAL_PRODUCTS;
+  const commissionRate = useDocument('config', 'settings', { rate: 2 }).rate || 2;
+
+  const handleLogin = (selectedRole) => {
+    setRole(selectedRole);
+    setActiveTab(selectedRole === 'driver' ? 'delivery' : 'dashboard');
+  };
+
+  // --- Logic Functions (Async Firestore) ---
+
+  const saveCustomer = async (data) => {
+    if (data.id) {
+       const { id, ...updateData } = data;
+       await updateDoc(doc(db, 'customers', id), updateData);
+       alert("✅ แก้ไขข้อมูลลูกค้าเรียบร้อย!");
+    } else {
+       await addDoc(collection(db, 'customers'), { 
+         ...data, points: 0, debt: 0, bottlesHeld: 0, 
+         defaultPayment: data.defaultPayment || 'Cash',
+         createdAt: new Date().toISOString() 
+       });
+       alert("✅ บันทึกข้อมูลลูกค้าสำเร็จ!");
+    }
+  };
+  
+  const addDriver = async (name, phone) => {
+      if(!name) return;
+      await addDoc(collection(db, 'drivers'), { name, phone });
+      alert("✅ เพิ่มคนขับเรียบร้อย");
+  };
+
+  const payDebt = async (custId, amount) => {
+      const payAmount = Number(amount);
+      if (payAmount <= 0) return alert("❌ จำนวนเงินไม่ถูกต้อง");
+      await updateDoc(doc(db, 'customers', custId), { debt: increment(-payAmount) });
+      alert(`✅ รับชำระหนี้เรียบร้อย ฿${payAmount.toLocaleString()}`);
+  };
+
+  const productionRun = async (pId, qty) => {
+    const prod = products.find(p => p.id === pId);
+    const q = Number(qty);
+    let enough = true;
+
+    if (prod.bom) {
+        for (const [mat, amount] of Object.entries(prod.bom)) {
+            const needed = amount * q;
+            if ((rawMaterials[mat] || 0) < needed) enough = false;
+        }
+    }
+
+    if (!enough) return alert("❌ วัตถุดิบไม่พอผลิต! กรุณาเช็คสต็อกวัตถุดิบ");
+
+    // Deduct Raw
+    if (prod.bom) {
+        for (const [mat, amount] of Object.entries(prod.bom)) {
+            await updateDoc(doc(db, 'config', 'rawMaterials'), { [mat]: increment(-(amount * q)) });
+        }
+    }
+    // Add Finished
+    await updateDoc(doc(db, 'config', 'inventory'), { [pId]: increment(q) });
+    alert(`✅ ผลิตสำเร็จ! เพิ่มสินค้าเข้าคลัง ${q} แพ็ค`);
+  };
+
+  const confirmDelivery = async (del) => {
+    if (!del.custId) return alert("กรุณาเลือกลูกค้า");
+    if (!del.driverId) return alert("กรุณาระบุคนขับ");
+    const prod = products.find(x => x.id === del.pId);
+    
+    const qty = Number(del.qty);
+    const freeQty = Number(del.freeQty || 0);
+    const returnQty = Number(del.returnQty || 0);
+    const unitPrice = Number(del.price || prod.targetPrice);
+
+    const totalStockDeduct = qty + freeQty;
+    if ((inventory[del.pId] || 0) < totalStockDeduct) return alert(`❌ สต็อกไม่พอ! มีอยู่ ${inventory[del.pId] || 0}`);
+
+    const totalAmount = qty * unitPrice;
+    const profit = (qty * unitPrice) - (totalStockDeduct * prod.cost);
+
+    const saleData = {
+      ...del, qty, freeQty, returnQty, revenue: totalAmount, profit,
+      date: new Date().toISOString().split('T')[0], 
+      timestamp: new Date().toISOString()
+    };
+    
+    await addDoc(collection(db, 'sales'), saleData);
+    
+    const custRef = doc(db, 'customers', del.custId);
+    const updates = {
+        points: increment(qty),
+        debt: del.paymentMethod === 'Credit' ? increment(totalAmount) : increment(0),
+    };
+    if (prod.isReturnable) {
+        updates.bottlesHeld = increment(totalStockDeduct - returnQty);
+    }
+    await updateDoc(custRef, updates);
+    await updateDoc(doc(db, 'config', 'inventory'), { [del.pId]: increment(-totalStockDeduct) });
+    
+    alert(`✅ บันทึกยอดขายเรียบร้อย!`);
+  };
+  
+  const deleteSale = async (saleId) => {
+    if (!window.confirm("⚠️ ยืนยันการลบรายการนี้? (สต็อกและหนี้ลูกค้าจะถูกคืนค่า)")) return;
+    const saleToDelete = sales.find(s => s.id === saleId);
+    if (!saleToDelete) return;
+
+    const totalDeduct = Number(saleToDelete.qty) + Number(saleToDelete.freeQty || 0);
+    
+    await updateDoc(doc(db, 'config', 'inventory'), { [saleToDelete.pId]: increment(totalDeduct) });
+
+    const prod = products.find(p => p.id === saleToDelete.pId);
+    const custRef = doc(db, 'customers', saleToDelete.custId);
+    const updates = { 
+        points: increment(-Number(saleToDelete.qty)), 
+        debt: saleToDelete.paymentMethod === 'Credit' ? increment(-Number(saleToDelete.revenue)) : increment(0) 
+    };
+    if (prod?.isReturnable) {
+        updates.bottlesHeld = increment(-(totalDeduct - Number(saleToDelete.returnQty || 0)));
+    }
+    await updateDoc(custRef, updates);
+    await deleteDoc(doc(db, 'sales', saleId));
+    alert("🗑️ ลบรายการและคืนค่าข้อมูลเรียบร้อย");
+  };
+
+  const addRawMaterial = async (name, qty, totalPrice) => {
+    if(!name || !qty) return;
+    const q = Number(qty);
+    const price = Number(totalPrice || 0);
+    
+    if (price > 0) {
+        const oldQty = rawMaterials[name] || 0;
+        const oldCost = materialCosts[name] || 0;
+        const newAvgCost = ((oldQty * oldCost) + price) / (oldQty + q);
+        await updateDoc(doc(db, 'config', 'materialCosts'), { [name]: newAvgCost });
+    }
+    await updateDoc(doc(db, 'config', 'rawMaterials'), { [name]: increment(q) });
+    alert(`✅ รับเข้า "${name}" สำเร็จ`);
+  };
+  
+  const updateRawMaterialStock = async (name, newQty) => {
+      await updateDoc(doc(db, 'config', 'rawMaterials'), { [name]: Number(newQty) });
+      alert(`✅ แก้ไขสต็อก "${name}" เป็น ${newQty} เรียบร้อย`);
+  };
+
+  const addExpense = async (category, desc, amount, date) => {
+      if(!amount || !date) return;
+      const finalDesc = category === 'อื่นๆ' ? desc : category;
+      await addDoc(collection(db, 'expenses'), { category, desc: finalDesc, amount: Number(amount), date });
+      alert("✅ บันทึกรายจ่ายเรียบร้อย");
+  };
+
+  const updateProductPrice = async (pId, newPrice, newCost) => {
+    const updated = products.map(p => p.id === pId ? { ...p, targetPrice: Number(newPrice), cost: Number(newCost) } : p);
+    await setDoc(doc(db, 'config', 'products'), { list: updated });
+    alert("✅ อัปเดตราคาเรียบร้อย!");
+  };
+
+  const addPromotion = async (promo) => {
+    await addDoc(collection(db, 'promotions'), promo);
+    alert("✅ สร้างโปรโมชั่นสำเร็จ");
+  };
+  
+  const updateCommissionRate = async (rate) => {
+    await setDoc(doc(db, 'config', 'settings'), { rate: Number(rate) }, { merge: true });
+  };
+
+  const notifyLine = () => {
+    const todaySales = sales.filter(s => s.date === new Date().toISOString().split('T')[0]);
+    const totalRev = todaySales.reduce((a,b) => a + b.revenue, 0);
+    const msg = `รายงานประจำวัน: ยอดขาย ${totalRev.toLocaleString()} บาท`;
+    window.open(`https://line.me/R/msg/text/?${encodeURIComponent(msg)}`, '_blank');
+  };
+
+  // --- Views ---
+
+  const DashboardView = () => {
+    const stats = useMemo(() => {
+      const rev = sales.reduce((a, b) => a + (Number(b.revenue) || 0), 0);
+      const grossProfit = sales.reduce((a, b) => a + (Number(b.profit) || 0), 0);
+      const totalExp = expenses.reduce((a, b) => a + (Number(b.amount) || 0), 0);
+      const netProfit = grossProfit - totalExp;
+      return { rev, netProfit, totalExp };
+    }, [sales, expenses]);
+    
+    const totalDebt = customers.reduce((a, b) => a + (Number(b.debt) || 0), 0);
+    const lowStockItems = products.filter(p => (inventory[p.id] || 0) < 50);
+
+    return (
+      <div className="space-y-6 animate-fade-in print:hidden">
+        <div className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
+           <div><h2 className="text-xl font-bold text-slate-800">ภาพรวมวันนี้</h2><p className="text-xs text-slate-500">ข้อมูลล่าสุด Real-time (Online)</p></div>
+           <button onClick={notifyLine} className="bg-green-500 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-green-600 transition-colors"><Bell size={18}/> แจ้งเตือนเข้า LINE</button>
+        </div>
+        
+        {lowStockItems.length > 0 && (
+            <div className="bg-red-50 p-4 rounded-2xl border border-red-200 flex items-start gap-3">
+                <AlertTriangle className="text-red-500 shrink-0" />
+                <div>
+                    <h4 className="font-bold text-red-700">แจ้งเตือนสินค้าใกล้หมด!</h4>
+                    <ul className="text-sm text-red-600 list-disc ml-4">
+                        {lowStockItems.map(p => <li key={p.id}>{p.name} เหลือ {inventory[p.id]} แพ็ค</li>)}
+                    </ul>
+                </div>
+            </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <StatCard title="รายได้รวม" value={stats.rev} icon={<DollarSign/>} color="blue" />
+          <StatCard title="กำไรสุทธิ (หักรายจ่าย)" value={stats.netProfit} icon={<TrendingUp/>} color={stats.netProfit >= 0 ? "green" : "red"} />
+          <StatCard title="รายจ่ายรวม" value={stats.totalExp} icon={<Receipt/>} color="orange" />
+          <StatCard title="หนี้คงค้าง" value={totalDebt} icon={<CreditCard/>} color="red" />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+                <h3 className="font-bold text-slate-700 mb-6">กราฟยอดขายรายวัน</h3>
+                <div className="h-64"><ResponsiveContainer width="100%" height="100%"><AreaChart data={Array.isArray(sales) ? sales : []}><CartesianGrid strokeDasharray="3 3" vertical={false}/><XAxis dataKey="date" hide/><YAxis/><Tooltip/><Area type="monotone" dataKey="revenue" stroke="#3B82F6" fill="#3B82F6" fillOpacity={0.1}/></AreaChart></ResponsiveContainer></div>
+            </div>
+            <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+                <h3 className="font-bold text-slate-700 mb-4">รายจ่ายล่าสุด</h3>
+                <div className="space-y-3 max-h-60 overflow-y-auto">
+                    {expenses.slice(-5).reverse().map(e => (
+                        <div key={e.id} className="flex justify-between items-center p-3 bg-red-50 rounded-xl">
+                            <span className="text-sm font-bold text-slate-600">{e.desc}</span>
+                            <span className="text-sm font-bold text-red-600">-฿{e.amount.toLocaleString()}</span>
+                        </div>
+                    ))}
+                    {expenses.length === 0 && <p className="text-center text-slate-400 text-sm py-4">ไม่มีรายการรายจ่าย</p>}
+                </div>
+            </div>
+        </div>
+      </div>
+    );
+  };
+
+  const ExpensesView = () => {
+      const [category, setCategory] = useState(EXPENSE_CATEGORIES[0]);
+      const [desc, setDesc] = useState('');
+      const [amount, setAmount] = useState('');
+      const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+
+      return (
+          <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm max-w-lg mx-auto print:hidden">
+              <h3 className="font-bold text-lg mb-4 flex items-center gap-2 text-red-600"><Receipt/> บันทึกรายจ่าย</h3>
+              <div className="space-y-4">
+                  <div>
+                    <label className="text-xs font-bold text-slate-500">ประเภทค่าใช้จ่าย</label>
+                    <select className="w-full p-3 border rounded-xl" value={category} onChange={e => setCategory(e.target.value)}>
+                        {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  {category === 'อื่นๆ' && (
+                      <div><label className="text-xs font-bold text-slate-500">รายละเอียดเพิ่มเติม</label><input className="w-full p-3 border rounded-xl" value={desc} onChange={e => setDesc(e.target.value)} placeholder="ระบุรายละเอียด" /></div>
+                  )}
+                  <div><label className="text-xs font-bold text-slate-500">จำนวนเงิน (บาท)</label><input type="number" className="w-full p-3 border rounded-xl" value={amount} onChange={e => setAmount(e.target.value)} /></div>
+                  <div><label className="text-xs font-bold text-slate-500">วันที่จ่าย</label><input type="date" className="w-full p-3 border rounded-xl" value={date} onChange={e => setDate(e.target.value)} /></div>
+                  <button onClick={() => { addExpense(category, desc, amount, date); setDesc(''); setAmount(''); }} className="w-full bg-red-500 text-white font-bold py-3 rounded-xl hover:bg-red-600">บันทึกรายจ่าย</button>
+              </div>
+          </div>
+      );
+  };
+
+  const DriversView = () => {
+      const [newName, setNewName] = useState('');
+      const [newPhone, setNewPhone] = useState('');
+      return (
+          <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm max-w-2xl mx-auto print:hidden">
+              <h3 className="font-bold text-lg mb-4 flex items-center gap-2 text-indigo-600"><Truck/> จัดการรายชื่อคนขับรถ</h3>
+              <div className="flex gap-2 mb-6">
+                  <input className="flex-1 p-3 border rounded-xl" placeholder="ชื่อคนขับ" value={newName} onChange={e => setNewName(e.target.value)} />
+                  <input className="w-40 p-3 border rounded-xl" placeholder="เบอร์โทร" value={newPhone} onChange={e => setNewPhone(e.target.value)} />
+                  <button onClick={() => { addDriver(newName, newPhone); setNewName(''); setNewPhone(''); }} className="bg-indigo-600 text-white px-4 rounded-xl font-bold"><Plus/></button>
+              </div>
+              <div className="space-y-2">
+                  {drivers.map(d => (
+                      <div key={d.id} className="flex justify-between items-center p-3 bg-slate-50 rounded-xl border border-slate-100">
+                          <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600"><User size={16}/></div>
+                              <div><p className="font-bold text-slate-700">{d.name}</p><p className="text-xs text-slate-400">{d.phone}</p></div>
+                          </div>
+                      </div>
+                  ))}
+              </div>
+          </div>
+      );
+  };
+
+  const PayrollView = () => {
+      const [rate, setRate] = useState(commissionRate);
+      
+      const updateRate = (e) => {
+          const newRate = Number(e.target.value);
+          setRate(newRate);
+          updateCommissionRate(newRate);
+      };
+
+      return (
+          <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm print:shadow-none print:border-none">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4 print:hidden">
+                  <h3 className="font-bold text-xl flex items-center gap-2 text-indigo-600"><Coins/> ค่าแรงคนขับ (Payroll)</h3>
+                  <div className="flex items-center gap-2 bg-indigo-50 px-4 py-2 rounded-xl border border-indigo-100">
+                      <span className="text-sm font-bold text-indigo-700">ตั้งค่าเรทคอมมิชชั่น:</span>
+                      <input 
+                          type="number" 
+                          value={rate} 
+                          onChange={updateRate}
+                          className="w-20 p-1 text-center border border-indigo-200 rounded-lg text-sm font-black text-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                      <span className="text-sm text-indigo-700">บาท/ชิ้น</span>
+                  </div>
+              </div>
+              
+              <div className="hidden print:block text-center mb-6">
+                <div className="flex justify-center mb-2">
+                    <img src="/logo.png" alt="Logo" className="h-16 w-auto object-contain" />
+                </div>
+                <h1 className="text-2xl font-bold">ใบสรุปค่าแรงคนขับรถ</h1>
+                <p className="text-sm text-slate-500">ประจำงวดวันที่ {new Date().toLocaleDateString('th-TH')}</p>
+              </div>
+
+              <div className="space-y-4">
+                  {drivers.map(driver => {
+                      const driverSales = sales.filter(s => s.driverId === driver.id); // Firestore IDs are strings
+                      const totalQty = driverSales.reduce((a, b) => a + Number(b.qty), 0);
+                      const totalCommission = totalQty * commissionRate;
+                      
+                      return (
+                        <div key={driver.id} className="p-4 border rounded-2xl flex justify-between items-center hover:bg-slate-50 transition-colors print:border-slate-300">
+                            <div className="flex items-center gap-3">
+                                <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-bold text-xl print:hidden">{driver.name.charAt(0)}</div>
+                                <div>
+                                    <h4 className="font-bold text-slate-700 text-lg">{driver.name}</h4>
+                                    <p className="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded-full inline-block mt-1 print:bg-transparent print:p-0">ส่งแล้ว {totalQty.toLocaleString()} ชิ้น / {driverSales.length} เที่ยว</p>
+                                </div>
+                            </div>
+                            <div className="text-right">
+                                <p className="text-xs text-slate-400 mb-1 print:hidden">ค่าคอมมิชชั่น ({commissionRate}บ.)</p>
+                                <h4 className="text-2xl font-black text-green-600">฿{totalCommission.toLocaleString()}</h4>
+                            </div>
+                        </div>
+                      );
+                  })}
+              </div>
+              <div className="mt-8 text-center print:block hidden">
+                 <p className="text-sm text-slate-400">ลงชื่อผู้รับเงิน .......................................................</p>
+              </div>
+          </div>
+      );
+  };
+
+  const InventoryView = () => {
+    const [prodForm, setProdForm] = useState({ pId: 'p600', qty: '' });
+    const [newMatName, setNewMatName] = useState('');
+    const [newMatQty, setNewMatQty] = useState('');
+    const [newMatPrice, setNewMatPrice] = useState('');
+    const [isCustomMat, setIsCustomMat] = useState(false);
+    const matDisplay = { preform: 'ขวดพรีฟอร์ม', cap: 'ฝาขวด', label: 'ฉลาก', film: 'ฟิล์มหด', seal: 'ซีลคอถัง' };
+
+    return (
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 print:hidden">
+        <div className="space-y-6">
+           <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm"><h3 className="font-bold text-lg mb-4 flex items-center gap-2 text-indigo-600"><Package/> สินค้าสำเร็จรูป</h3><div className="grid grid-cols-2 gap-4">{products.map(p => (<div key={p.id} className="bg-slate-50 p-4 rounded-2xl flex justify-between items-center"><div><p className="text-xs text-slate-400 font-bold">{p.name}</p><h4 className="text-2xl font-black text-slate-800">{inventory[p.id] || 0}</h4></div></div>))}</div></div>
+           <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm"><h3 className="font-bold text-lg mb-4 flex items-center gap-2 text-green-600"><PlusCircle/> สั่งผลิต</h3><div className="flex gap-2"><select className="flex-1 p-3 border rounded-xl" value={prodForm.pId} onChange={e => setProdForm({...prodForm, pId: e.target.value})}>{products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select><input type="number" className="w-24 p-3 border rounded-xl" placeholder="จำนวน" value={prodForm.qty} onChange={e => setProdForm({...prodForm, qty: e.target.value})} /><button onClick={() => { productionRun(prodForm.pId, prodForm.qty); setProdForm({...prodForm, qty: ''}) }} className="bg-green-600 text-white px-6 rounded-xl font-bold shadow-lg">ผลิต</button></div></div>
+        </div>
+        <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm"><h3 className="font-bold text-lg mb-4 flex items-center gap-2 text-orange-600"><Database/> คลังวัตถุดิบ</h3><div className="space-y-4 mb-6 max-h-60 overflow-y-auto">{Object.entries(rawMaterials).map(([key, val]) => (<div key={key} className="flex justify-between items-center text-sm border-b pb-2"><div><span className="capitalize font-bold text-slate-600">{matDisplay[key] || key}</span><div className="text-[10px] text-slate-400">ต้นทุน: ฿{(materialCosts[key] || 0).toFixed(3)}/หน่วย</div></div><div className="flex items-center gap-2"><span className="font-bold">{val.toLocaleString()}</span><button onClick={() => {const n = prompt("แก้ไขจำนวน:", val); if(n) updateRawMaterialStock(key, n)}} className="text-slate-400"><Edit3 size={14}/></button></div></div>))}</div><div className="pt-4 border-t border-slate-100 bg-slate-50 p-4 rounded-xl"><label className="text-xs font-bold text-slate-500 mb-2 block">รับวัตถุดิบเข้า (Stock In)</label><div className="grid grid-cols-2 gap-2 mb-2">{!isCustomMat ? (<select className="p-2 border rounded-lg text-sm" value={newMatName} onChange={e => { if(e.target.value === 'custom') { setIsCustomMat(true); setNewMatName(''); } else { setNewMatName(e.target.value); } }}><option value="">-- เลือกรายการ --</option>{Object.keys(rawMaterials).map(k => <option key={k} value={k}>{matDisplay[k] || k}</option>)}<option value="custom">+ รายการใหม่</option></select>) : (<div className="flex gap-1"><input className="flex-1 p-2 border rounded-lg text-sm" placeholder="ชื่อ" value={newMatName} onChange={e => setNewMatName(e.target.value)} autoFocus /><button onClick={() => setIsCustomMat(false)} className="px-1 text-red-500"><XCircle size={16}/></button></div>)}<input type="number" className="p-2 border rounded-lg text-sm" placeholder="จำนวน" value={newMatQty} onChange={e => setNewMatQty(e.target.value)} /></div><div className="flex gap-2"><input type="number" className="flex-1 p-2 border rounded-lg text-sm" placeholder="ราคารวมที่ซื้อมา (บาท)" value={newMatPrice} onChange={e => setNewMatPrice(e.target.value)} /><button onClick={() => { addRawMaterial(newMatName, newMatQty, newMatPrice); setNewMatName(''); setNewMatQty(''); setNewMatPrice(''); if(isCustomMat) setIsCustomMat(false); }} className="bg-orange-500 text-white px-4 rounded-lg font-bold text-sm">รับเข้า</button></div></div></div>
+      </div>
+    );
+  };
+  const LogisticsView = () => {
+    const [calc, setCalc] = useState({ vId: 'pickup', pId: 'p600', dist: 40, qty: 200, fuelPrice: 32, profit: 3, helperCost: 350 });
+    const v = INITIAL_VEHICLES[calc.vId];
+    const p = products.find(x => x.id === calc.pId);
+    const fuelCost = (Number(calc.dist) * 2 / v.consumption) * Number(calc.fuelPrice);
+    const totalTransCost = fuelCost + v.labor + Number(calc.helperCost) + v.other;
+    const transPerPack = totalTransCost / Number(calc.qty);
+    const totalCost = p.cost + transPerPack;
+    const recPrice = totalCost + Number(calc.profit);
+    const totalWeight = (Number(calc.qty) * p.weight);
+    const isOverweight = totalWeight > v.maxWeight;
+    
+    return (
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 print:hidden">
+        <div className="bg-white p-8 rounded-3xl border shadow-sm space-y-4">
+           <h3 className="font-bold text-xl text-blue-600 flex gap-2"><Calculator/> คำนวณราคาขนส่ง</h3>
+           <div className="grid grid-cols-2 gap-4"><div className="space-y-1"><label className="text-xs font-bold text-slate-500">ประเภทรถ</label><select className="w-full p-3 border rounded-xl" value={calc.vId} onChange={e => setCalc({...calc, vId: e.target.value})}>{Object.entries(INITIAL_VEHICLES).map(([k,v]) => <option key={k} value={k}>{v.name}</option>)}</select></div><div className="space-y-1"><label className="text-xs font-bold text-slate-500">สินค้า</label><select className="w-full p-3 border rounded-xl" value={calc.pId} onChange={e => setCalc({...calc, pId: e.target.value})}>{products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div></div>
+           <div className="grid grid-cols-2 gap-4"><div className="space-y-1"><label className="text-xs font-bold">ราคาน้ำมัน (บาท/ลิตร)</label><input type="number" className="w-full p-3 border border-blue-200 bg-blue-50 rounded-xl" value={calc.fuelPrice} onChange={e => setCalc({...calc, fuelPrice: e.target.value})} /></div><div className="space-y-1"><label className="text-xs font-bold">ระยะทาง (กม.)</label><input type="number" className="w-full p-3 border rounded-xl" value={calc.dist} onChange={e => setCalc({...calc, dist: e.target.value})} /></div></div>
+           <div className="grid grid-cols-2 gap-4"><div className="space-y-1"><label className="text-xs font-bold">จำนวนสินค้า (แพ็ค)</label><input type="number" className="w-full p-3 border rounded-xl" value={calc.qty} onChange={e => setCalc({...calc, qty: e.target.value})} /></div><div className="space-y-1"><label className="text-xs font-bold">ค่าแรงเด็กท้าย (บาท)</label><input type="number" className="w-full p-3 border rounded-xl" value={calc.helperCost} onChange={e => setCalc({...calc, helperCost: e.target.value})} /></div></div>
+        </div>
+        <div className={`p-8 rounded-3xl text-white shadow-xl ${isOverweight ? 'bg-red-600' : 'bg-indigo-600'}`}>
+           <p className="font-bold opacity-80 text-xs uppercase">ราคาแนะนำต่อแพ็ค</p><h2 className="text-5xl font-black">฿{Math.ceil(recPrice).toFixed(2)}</h2>
+           <div className="mt-4 space-y-2 text-sm opacity-80"><div className="flex justify-between"><span>ค่าน้ำมันรวม:</span><span>฿{fuelCost.toFixed(0)}</span></div><div className="flex justify-between"><span>ต้นทุนส่งต่อแพ็ค:</span><span>฿{transPerPack.toFixed(2)}</span></div><div className="flex justify-between pt-2 border-t border-white/30 font-bold"><span>น้ำหนักรวม:</span><span>{totalWeight.toLocaleString()} กก. {isOverweight && '(เกินพิกัด!)'}</span></div></div>
+        </div>
+      </div>
+    );
+  };
+  const SettingsView = () => (
+    <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm print:hidden">
+      <h3 className="font-bold text-lg mb-4 flex items-center gap-2 text-slate-700"><Settings/> ตั้งค่าราคาสินค้า (ซื้อ-ขาย)</h3>
+      <div className="overflow-x-auto"><table className="w-full text-sm text-left"><thead className="bg-slate-50 text-slate-500 uppercase font-bold"><tr><th className="p-3">สินค้า</th><th className="p-3">ราคาขาย (บาท)</th><th className="p-3">ต้นทุนผลิต (บาท)</th><th className="p-3">บันทึก</th></tr></thead><tbody>{products.map(p => (<tr key={p.id} className="border-t"><td className="p-3 font-bold text-slate-700">{p.name}</td><td className="p-3"><input type="number" className="w-20 p-2 border rounded-lg text-center font-bold text-blue-600" defaultValue={p.targetPrice} id={`price-${p.id}`} /></td><td className="p-3"><input type="number" className="w-20 p-2 border rounded-lg text-center" defaultValue={p.cost} id={`cost-${p.id}`} /></td><td className="p-3"><button onClick={() => updateProductPrice(p.id, document.getElementById(`price-${p.id}`).value, document.getElementById(`cost-${p.id}`).value)} className="bg-slate-800 text-white px-3 py-1 rounded-lg text-xs">บันทึก</button></td></tr>))}</tbody></table></div>
+    </div>
+  );
+  const MarketingView = () => {
+    const [newPromo, setNewPromo] = useState({ title: '', desc: '', badge: 'Hot' });
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 print:hidden">
+        <div className="bg-white p-8 rounded-3xl border shadow-sm space-y-4">
+          <h3 className="font-bold text-lg text-blue-600 flex gap-2"><Tag/> โปรโมชั่นปัจจุบัน</h3>
+          <div className="space-y-3">{promotions.map(p => (<div key={p.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex justify-between items-center"><div><h4 className="font-bold text-slate-800">{p.title}</h4><p className="text-xs text-slate-500">{p.desc}</p></div><span className="text-[8px] font-black bg-blue-100 text-blue-600 px-2 py-1 rounded-full uppercase">{p.badge}</span></div>))}</div>
+        </div>
+        <div className="bg-white p-8 rounded-3xl border shadow-sm space-y-4">
+           <h3 className="font-bold text-lg text-green-600"><PlusCircle/> สร้างโปรโมชั่นใหม่</h3>
+           <input className="w-full p-3 border rounded-xl" placeholder="ชื่อโปร (เช่น 10 แถม 1)" value={newPromo.title} onChange={e => setNewPromo({...newPromo, title: e.target.value})} />
+           <input className="w-full p-3 border rounded-xl" placeholder="รายละเอียด" value={newPromo.desc} onChange={e => setNewPromo({...newPromo, desc: e.target.value})} />
+           <button onClick={() => { addPromotion(newPromo); setNewPromo({title:'',desc:'',badge:'Hot'}); }} className="w-full bg-green-600 text-white font-bold py-3 rounded-xl">บันทึกโปรโมชั่น</button>
+        </div>
+      </div>
+    );
+  };
+  const ReportsView = () => {
+    const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
+    const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+    const [reportType, setReportType] = useState('transactions');
+
+    const filteredSales = sales.filter(s => s.date >= startDate && s.date <= endDate);
+
+    const getProductSummary = () => {
+        const summary = {};
+        filteredSales.forEach(s => {
+            if (!summary[s.pId]) summary[s.pId] = { name: products.find(p => p.id === s.pId)?.name, qty: 0, revenue: 0 };
+            summary[s.pId].qty += Number(s.qty);
+            summary[s.pId].revenue += Number(s.revenue);
+        });
+        return Object.values(summary);
+    };
+
+    const getDriverSummary = () => {
+        const summary = {};
+        filteredSales.forEach(s => {
+            const driverId = s.driverId; // Keep as string from firebase
+            if (!driverId) return;
+            const driver = drivers.find(d => d.id === driverId);
+            const driverName = driver ? driver.name : 'Unknown';
+
+            if (!summary[driverId]) summary[driverId] = { name: driverName, qty: 0, trips: 0 };
+            summary[driverId].qty += Number(s.qty);
+            summary[driverId].trips += 1;
+        });
+        return Object.values(summary);
+    };
+
+    const [selectedReceipt, setSelectedReceipt] = useState(null);
+
+    // New: Delete Sale Logic
+    const deleteSale = async (saleId) => {
+        if (!window.confirm("⚠️ ยืนยันการลบรายการนี้? (สต็อกและหนี้ลูกค้าจะถูกคืนค่า)")) return;
+        const saleToDelete = sales.find(s => s.id === saleId);
+        if (!saleToDelete) return;
+
+        const totalDeduct = Number(saleToDelete.qty) + Number(saleToDelete.freeQty || 0);
+        await updateDoc(doc(db, 'config', 'inventory'), { [saleToDelete.pId]: increment(totalDeduct) });
+
+        const prod = products.find(p => p.id === saleToDelete.pId);
+        const custRef = doc(db, 'customers', saleToDelete.custId);
+        const updates = { 
+            points: increment(-Number(saleToDelete.qty)), 
+            debt: saleToDelete.paymentMethod === 'Credit' ? increment(-Number(saleToDelete.revenue)) : increment(0) 
+        };
+        if (prod?.isReturnable) {
+            updates.bottlesHeld = increment(-(totalDeduct - Number(saleToDelete.returnQty || 0)));
+        }
+        await updateDoc(custRef, updates);
+        await deleteDoc(doc(db, 'sales', saleId));
+        alert("🗑️ ลบรายการเรียบร้อย");
+    };
+
+    return (
+      <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm space-y-6 print:shadow-none print:border-none">
+        <div className="flex flex-col md:flex-row justify-between items-center gap-4 print:hidden"><h3 className="font-bold text-lg flex items-center gap-2 text-slate-700"><FileText/> รายงาน (Reports)</h3><div className="flex gap-2 bg-slate-100 p-1 rounded-xl"><button onClick={() => setReportType('transactions')} className={`px-3 py-1 rounded-lg text-sm font-bold ${reportType === 'transactions' ? 'bg-white shadow text-slate-800' : 'text-slate-500'}`}>ประวัติการขาย</button><button onClick={() => setReportType('products')} className={`px-3 py-1 rounded-lg text-sm font-bold ${reportType === 'products' ? 'bg-white shadow text-slate-800' : 'text-slate-500'}`}>สินค้าขายดี</button><button onClick={() => setReportType('drivers')} className={`px-3 py-1 rounded-lg text-sm font-bold ${reportType === 'drivers' ? 'bg-white shadow text-slate-800' : 'text-slate-500'}`}>คนขับ</button></div><div className="flex gap-2 text-sm items-center"><input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="border p-2 rounded-lg" /><span>-</span><input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="border p-2 rounded-lg" /></div></div>
+        
+        {/* Print Header */}
+        <div className="hidden print:block text-center mb-6">
+            <div className="flex justify-center mb-4">
+                <img src="/logo.png" alt="Logo" className="h-24 w-auto object-contain" onError={(e) => {e.target.onerror = null; e.target.src = "https://placehold.co/100x100?text=Logo";}} /> 
+            </div>
+            <h1 className="text-2xl font-bold text-black">บริษัท ธิดาดาว จำกัด</h1>
+            <p className="text-sm text-black">114 ม.6 ต.หนองปลิง อ.นิคมน้ำอูน จ.สกลนคร</p>
+            <p className="text-sm text-black">เลขผู้เสียภาษี 0475568000588</p>
+            <div className="my-4 border-b border-black"></div>
+            <h2 className="text-xl font-bold text-black">รายงานสรุปยอดขาย</h2>
+            <p className="text-sm text-black">ประจำวันที่ {new Date(startDate).toLocaleDateString('th-TH')} ถึง {new Date(endDate).toLocaleDateString('th-TH')}</p>
+        </div>
+
+        {reportType === 'transactions' && (
+            <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left">
+                <thead className="bg-slate-50 text-slate-500 uppercase font-bold text-[10px]"><tr><th className="p-3">วันที่/เวลา</th><th className="p-3">ลูกค้า</th><th className="p-3">คนขับ</th><th className="p-3">สินค้า</th><th className="p-3 text-center">จำนวน</th><th className="p-3 text-right">ยอดเงิน</th><th className="p-3 text-center">ชำระ</th><th className="p-3 text-center print:hidden">จัดการ</th></tr></thead>
+                <tbody>
+                {filteredSales.sort((a,b) => b.timestamp < a.timestamp ? -1 : 1).map(s => { 
+                    const cust = customers.find(c => c.id === s.custId); const prod = products.find(p => p.id === s.pId); const driver = drivers.find(d => d.id === s.driverId);
+                    return (<tr key={s.id} className="border-t hover:bg-slate-50"><td className="p-3 text-slate-500">{s.date} <span className="text-[10px]">{s.timestamp?.split('T')[1]?.split('.')[0]}</span></td><td className="p-3 font-bold text-slate-700">{cust?.name || '-'}</td><td className="p-3 text-slate-600">{driver?.name || '-'}</td><td className="p-3">{prod?.name || s.pId}</td><td className="p-3 text-center">{s.qty} {s.freeQty > 0 && <span className="text-green-500 text-xs">+{s.freeQty}ฟรี</span>}</td><td className="p-3 text-right font-bold text-indigo-600">฿{s.revenue.toLocaleString()}</td><td className="p-3 text-center"><span className={`px-2 py-1 rounded text-[10px] font-bold ${s.paymentMethod === 'Credit' ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>{s.paymentMethod}</span></td>
+                    <td className="p-3 text-center flex gap-2 justify-center print:hidden">
+                        <button onClick={() => setSelectedReceipt({ ...s, custName: cust?.name, prodName: prod?.name })} className="p-1 hover:bg-slate-200 rounded text-blue-500"><Printer size={16}/></button>
+                        <button onClick={() => deleteSale(s.id)} className="p-1 hover:bg-red-100 rounded text-red-500"><Trash2 size={16}/></button>
+                    </td></tr>); 
+                })}
+                </tbody>
+            </table>
+            </div>
+        )}
+
+        {reportType === 'products' && (<div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center"><div className="h-64"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={getProductSummary()} dataKey="qty" nameKey="name" cx="50%" cy="50%" outerRadius={80} fill="#8884d8" label>{getProductSummary().map((entry, index) => <Cell key={`cell-${index}`} fill={['#0088FE', '#00C49F', '#FFBB28', '#FF8042'][index % 4]} />)}</Pie><Tooltip /></PieChart></ResponsiveContainer></div><div><h4 className="font-bold text-slate-700 mb-4">สรุปยอดขายแยกตามสินค้า</h4><ul className="space-y-2">{getProductSummary().map((p, idx) => (<li key={idx} className="flex justify-between p-2 border-b text-sm"><span>{p.name}</span><span className="font-bold">{p.qty.toLocaleString()} ชิ้น (฿{p.revenue.toLocaleString()})</span></li>))}</ul></div></div>)}
+        {reportType === 'drivers' && (<div><h4 className="font-bold text-slate-700 mb-4">สรุปผลงานคนขับรถ</h4><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">{getDriverSummary().map((d, idx) => (<div key={idx} className="bg-indigo-50 p-4 rounded-2xl border border-indigo-100"><h5 className="font-bold text-indigo-800">{d.name}</h5><p className="text-sm text-indigo-600 mt-2">ส่งของ: <span className="font-bold">{d.qty}</span> ชิ้น</p><p className="text-sm text-indigo-600">จำนวนเที่ยว: <span className="font-bold">{d.trips}</span> เที่ยว</p></div>))}</div></div>)}
+        
+        <div className="text-center mt-6 print:hidden">
+            <button onClick={() => window.print()} className="bg-slate-800 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 mx-auto hover:bg-slate-900"><Printer size={18}/> สั่งพิมพ์รายงาน (A4)</button>
+        </div>
+
+        {selectedReceipt && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 print:hidden" onClick={() => setSelectedReceipt(null)}>
+                <div className="bg-white p-6 rounded-2xl w-full max-w-sm shadow-2xl" onClick={e => e.stopPropagation()}>
+                    <div className="text-center border-b pb-4 mb-4">
+                        <div className="flex justify-center mb-2">
+                             <img src="/logo.png" alt="Logo" className="h-16 w-auto object-contain" onError={(e) => {e.target.onerror = null; e.target.src = "https://placehold.co/100x100?text=Logo";}} />
+                        </div>
+                        <h3 className="font-bold text-lg">ใบเสร็จรับเงิน (Receipt)</h3>
+                        <p className="text-xs font-bold text-slate-700">บริษัท ธิดาดาว จำกัด</p>
+                        <p className="text-[10px] text-slate-500">114 ม.6 ต.หนองปลิง อ.นิคมน้ำอูน จ.สกลนคร</p>
+                        <p className="text-[10px] text-slate-500">เลขผู้เสียภาษี 0475568000588</p>
+                    </div>
+                    <div className="space-y-2 text-sm mb-6">
+                        <div className="flex justify-between"><span>วันที่:</span><span className="font-bold">{selectedReceipt.date}</span></div>
+                        <div className="flex justify-between"><span>ลูกค้า:</span><span className="font-bold">{selectedReceipt.custName}</span></div>
+                        <div className="flex justify-between"><span>รายการ:</span><span>{selectedReceipt.prodName}</span></div>
+                        <div className="flex justify-between"><span>จำนวน:</span><span>{selectedReceipt.qty} ชิ้น</span></div>
+                        {selectedReceipt.freeQty > 0 && <div className="flex justify-between text-green-600"><span>แถมฟรี:</span><span>{selectedReceipt.freeQty} ชิ้น</span></div>}
+                        <div className="flex justify-between text-lg font-bold border-t pt-2 mt-2"><span>ยอดสุทธิ:</span><span>฿{selectedReceipt.revenue.toLocaleString()}</span></div>
+                        <div className="text-center text-xs text-slate-400 mt-4">({selectedReceipt.paymentMethod === 'Credit' ? 'ค้างชำระ' : 'ชำระเงินสดแล้ว'})</div>
+                    </div>
+                    <button onClick={() => setSelectedReceipt(null)} className="w-full py-3 bg-slate-100 rounded-xl font-bold text-slate-600 hover:bg-slate-200">ปิด</button>
+                </div>
+            </div>
+        )}
+
+      </div>
+    );
+  };
+  const DeliveryView = () => {
+    const [del, setDel] = useState({ custId: '', pId: 'p189', qty: '', freeQty: '', returnQty: '', paymentMethod: 'Cash', driverId: '', price: '' });
+    const safeCustomers = Array.isArray(customers) ? customers : [];
+    const isReturnable = products.find(p => p.id === del.pId)?.isReturnable;
+    const [photoTaken, setPhotoTaken] = useState(false);
+    const [showPromos, setShowPromos] = useState(false);
+    useEffect(() => { const selectedCustomer = safeCustomers.find(c => c.id === del.custId); if (selectedCustomer && selectedCustomer.defaultPayment) { setDel(prev => ({ ...prev, paymentMethod: selectedCustomer.defaultPayment })); } }, [del.custId, safeCustomers]);
+    // Set default price when product changes
+    useEffect(() => { const prod = products.find(p => p.id === del.pId); if(prod) setDel(prev => ({...prev, price: prod.targetPrice})); }, [del.pId, products]);
+
+    return (
+      <div className="max-w-md mx-auto bg-white p-6 rounded-3xl shadow-xl border border-indigo-100 print:hidden">
+        <h3 className="font-bold text-center mb-6 text-indigo-700 flex items-center justify-center gap-2"><Truck/> Driver Mode</h3>
+        <div className="mb-4"><button onClick={() => setShowPromos(!showPromos)} className="w-full py-2 px-4 bg-pink-100 text-pink-600 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-pink-200 transition-colors"><Gift size={18}/> {showPromos ? 'ซ่อนโปรโมชั่น' : 'ดูโปรโมชั่นวันนี้'}</button>{showPromos && (<div className="mt-3 space-y-2 p-3 bg-pink-50 rounded-xl border border-pink-100">{promotions.length === 0 ? <p className="text-center text-sm text-gray-500">ไม่มีโปรโมชั่น</p> : promotions.map(p => (<div key={p.id} className="flex justify-between items-start border-b border-pink-200 pb-2 last:border-0 last:pb-0"><div><p className="font-bold text-sm text-pink-800">{p.title}</p><p className="text-xs text-pink-600">{p.desc}</p></div><span className="text-[10px] bg-white text-pink-600 px-2 py-0.5 rounded-full border border-pink-200 font-bold">{p.badge}</span></div>))}</div>)}</div>
+        <div className="space-y-4">
+          <div className="space-y-1">
+             <label className="text-xs font-bold text-slate-500">คนขับรถ</label>
+             <select className="w-full p-3 border rounded-xl bg-slate-50" value={del.driverId} onChange={e => setDel({...del, driverId: e.target.value})}>
+                <option value="">-- ระบุชื่อคนขับ --</option>
+                {drivers.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+             </select>
+          </div>
+          <div className="space-y-1"><label className="text-xs font-bold text-slate-500">เลือกลูกค้า</label><select className="w-full p-3 border rounded-xl bg-slate-50" value={del.custId} onChange={e => setDel({...del, custId: e.target.value})}><option value="">-- กรุณาเลือก --</option>{safeCustomers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+          {/* เพิ่มปุ่มนำทาง (Navigation Button) ที่นี่ */}
+          {del.custId && safeCustomers.find(c => c.id === del.custId)?.lat && (
+             <a 
+               href={`https://www.google.com/maps/search/?api=1&query=${safeCustomers.find(c => c.id === del.custId).lat},${safeCustomers.find(c => c.id === del.custId).lng}`} 
+               target="_blank"
+               className="mt-2 w-full py-2 bg-blue-100 text-blue-600 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-blue-200 transition-colors"
+             >
+               <Navigation size={16}/> นำทางไปหาลูกค้า
+             </a>
+          )}
+          </div>
+          <div className="grid grid-cols-2 gap-2"><div className="space-y-1"><label className="text-xs font-bold text-slate-500">สินค้า</label><select className="w-full p-3 border rounded-xl" value={del.pId} onChange={e => setDel({...del, pId: e.target.value})}>{products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div><div className="space-y-1"><label className="text-xs font-bold text-slate-500">จำนวนขาย (คิดเงิน)</label><input type="number" className="w-full p-3 border rounded-xl font-bold" placeholder="0" value={del.qty} onChange={e => setDel({...del, qty: e.target.value})} /></div></div>
+          
+          {/* New Price Override Field */}
+          <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+             <label className="text-xs font-bold text-slate-500 mb-1 flex items-center gap-1"><Edit3 size={12}/> ราคาขายต่อหน่วย (แก้ไขได้)</label>
+             <input type="number" className="w-full p-2 border border-slate-300 rounded-lg text-center font-bold text-indigo-600" value={del.price} onChange={e => setDel({...del, price: e.target.value})} />
+             <p className="text-xs text-right mt-1 text-slate-400">รวมเป็นเงิน: ฿{((Number(del.qty) || 0) * (Number(del.price) || 0)).toLocaleString()}</p>
+          </div>
+
+          <div className="bg-green-50 p-4 rounded-xl border border-green-100"><label className="text-xs font-bold text-green-800 mb-2 flex items-center gap-1"><Gift size={14}/> ของแถม (ไม่คิดเงิน)</label><div className="flex gap-2 items-center"><input type="number" className="flex-1 p-2 border rounded-lg text-center font-bold text-lg" placeholder="0" value={del.freeQty} onChange={e => setDel({...del, freeQty: e.target.value})} /><span className="text-xs text-green-600">ตัดสต็อกแต่ไม่คิดเงิน</span></div></div>
+          {isReturnable && (<div className="bg-blue-50 p-4 rounded-xl border border-blue-100"><label className="text-xs font-bold text-blue-800 mb-2 flex items-center gap-1"><Recycle size={14}/> รับถังเปล่าคืน (ใบ)</label><div className="flex gap-2 items-center"><input type="number" className="flex-1 p-2 border rounded-lg text-center font-bold text-lg" placeholder="0" value={del.returnQty} onChange={e => setDel({...del, returnQty: e.target.value})} /><span className="text-xs text-blue-400">คืนไม่ครบระบบจะบวกหนี้ถัง</span></div></div>)}
+          <div className="bg-orange-50 p-4 rounded-xl border border-orange-100"><label className="text-xs font-bold text-orange-800 mb-2 block">การชำระเงิน</label><div className="flex gap-2"><button onClick={() => setDel({...del, paymentMethod: 'Cash'})} className={`flex-1 py-2 rounded-lg font-bold text-xs ${del.paymentMethod === 'Cash' ? 'bg-green-500 text-white' : 'bg-white text-slate-500 border'}`}>💰 จ่ายสด</button><button onClick={() => setDel({...del, paymentMethod: 'Credit'})} className={`flex-1 py-2 rounded-lg font-bold text-xs ${del.paymentMethod === 'Credit' ? 'bg-red-500 text-white' : 'bg-white text-slate-500 border'}`}>📝 ติดไว้ก่อน</button></div></div>
+          <div className={`border-2 border-dashed h-32 rounded-2xl flex flex-col items-center justify-center cursor-pointer transition-colors ${photoTaken ? 'border-green-500 bg-green-50' : 'border-slate-300 hover:bg-slate-50'}`} onClick={() => setPhotoTaken(!photoTaken)}><Camera size={32} className={photoTaken ? "text-green-500" : "text-slate-400"}/>
+             <p className={`text-xs mt-2 font-bold ${photoTaken ? "text-green-600" : "text-slate-400"}`}>{photoTaken ? '✅ ถ่ายรูปเรียบร้อย' : 'แตะเพื่อถ่ายรูปสินค้า'}</p></div>
+          <button onClick={() => { if(!photoTaken) return alert("กรุณาถ่ายรูปก่อน!"); confirmDelivery(del); setPhotoTaken(false); }} className="w-full text-white font-bold py-4 rounded-2xl shadow-lg bg-indigo-600 hover:bg-indigo-700">บันทึกส่งของ</button>
+        </div>
+      </div>
+    );
+  };
+
+  const CRMView = () => {
+    const [formData, setFormData] = useState({ id: null, name: '', tel: '', address: '', type: 'individual', defaultPayment: 'Cash' });
+    const handleGPS = () => { if (navigator.geolocation) { navigator.geolocation.getCurrentPosition((pos) => { setFormData({...formData, lat: pos.coords.latitude, lng: pos.coords.longitude}); alert("📍 บันทึกพิกัด GPS เรียบร้อย!"); }); } else { alert("Browser ไม่รองรับ GPS"); } };
+    const customerTypes = { individual: { label: 'บุคคลทั่วไป', color: 'bg-blue-100 text-blue-600' }, shop: { label: 'ร้านค้า', color: 'bg-purple-100 text-purple-600' }, gov: { label: 'ราชการ', color: 'bg-orange-100 text-orange-600' } };
+
+    return (
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 print:hidden">
+        <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-4">
+          <h3 className="font-bold flex items-center gap-2"><Users size={18}/> {formData.id ? 'แก้ไขข้อมูล' : 'ลูกค้าใหม่'}</h3>
+          <input placeholder="ชื่อลูกค้า" className="w-full p-3 border rounded-xl" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
+          <input placeholder="เบอร์โทร" className="w-full p-3 border rounded-xl" value={formData.tel} onChange={e => setFormData({...formData, tel: e.target.value})} />
+          <div className="space-y-1"><label className="text-xs font-bold text-slate-500">ประเภทลูกค้า</label><select className="w-full p-3 border rounded-xl" value={formData.type} onChange={e => setFormData({...formData, type: e.target.value})}><option value="individual">บุคคลทั่วไป</option><option value="shop">ร้านค้า</option><option value="gov">หน่วยงานราชการ</option></select></div>
+          <div className="space-y-1"><label className="text-xs font-bold text-slate-500">การชำระเงินเริ่มต้น</label><select className="w-full p-3 border rounded-xl" value={formData.defaultPayment} onChange={e => setFormData({...formData, defaultPayment: e.target.value})}><option value="Cash">เงินสด</option><option value="Credit">เครดิต (ติดไว้ก่อน)</option></select></div>
+          <textarea placeholder="ที่อยู่ (บ้านเลขที่, ซอย, จุดสังเกต)" className="w-full p-3 border rounded-xl h-24" value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} />
+          <button onClick={handleGPS} className="w-full border-2 border-indigo-100 text-indigo-600 font-bold py-3 rounded-xl flex items-center justify-center gap-2 hover:bg-indigo-50"><MapPin size={18}/> ดึงพิกัด GPS</button>
+          <button onClick={() => { saveCustomer(formData); setFormData({id:null, name:'', tel:'', address:'', type:'individual', defaultPayment: 'Cash'}); }} className="w-full bg-blue-600 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2"><Save size={18}/> {formData.id ? 'อัปเดตข้อมูล' : 'บันทึก'}</button>
+          {formData.id && <button onClick={() => setFormData({id:null, name:'', tel:'', address:'', type:'individual', defaultPayment: 'Cash'})} className="w-full bg-slate-100 text-slate-500 font-bold py-2 rounded-xl text-xs">ยกเลิกการแก้ไข</button>}
+        </div>
+        <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+          <table className="w-full text-sm text-left"><thead className="bg-slate-50 text-[10px] uppercase text-slate-400 font-bold"><tr><th className="p-4">ประเภท</th><th className="p-4">ชื่อ/ที่อยู่</th><th className="p-4 text-center">หนี้ค้าง</th><th className="p-4 text-center">ติดถัง</th><th className="p-4 text-center">แต้ม</th><th className="p-4 text-center">จัดการ</th></tr></thead><tbody>{customers.map(c => (<tr key={c.id} className="border-t hover:bg-slate-50"><td className="p-4"><span className={`px-2 py-1 rounded-full text-[10px] font-bold ${customerTypes[c.type]?.color}`}>{customerTypes[c.type]?.label || c.type}</span></td><td className="p-4"><p className="font-bold text-slate-700">{c.name}</p><p className="text-xs text-slate-400">{c.address || 'ไม่ระบุที่อยู่'}</p></td><td className={`p-4 text-center font-black ${c.debt > 0 ? 'text-red-500' : 'text-slate-300'}`}>฿{(c.debt || 0).toLocaleString()}</td><td className={`p-4 text-center font-bold ${c.bottlesHeld > 0 ? 'text-orange-500' : 'text-slate-300'}`}>{c.bottlesHeld || 0}</td><td className="p-4 text-center font-bold text-blue-600">{c.points || 0}</td><td className="p-4 text-center"><div className="flex gap-2 justify-center"><button onClick={() => setFormData(c)} className="bg-slate-100 text-slate-600 p-2 rounded-lg hover:bg-blue-50 hover:text-blue-600"><Edit3 size={14}/></button>{c.debt > 0 && <button onClick={() => { const amt = prompt('ระบุยอดชำระหนี้:', c.debt); if(amt) payDebt(c.id, amt); }} className="bg-green-100 text-green-600 p-2 rounded-lg hover:bg-green-200" title="รับชำระหนี้"><CheckCircle size={14}/></button>}{c.lat && c.lng && (<a href={`https://www.google.com/maps/search/?api=1&query=${c.lat},${c.lng}`} target="_blank" className="bg-blue-100 text-blue-600 p-2 rounded-lg hover:bg-blue-200" title="นำทาง"><MapPin size={14}/></a>)}</div></td></tr>))}</tbody></table>
+        </div>
+      </div>
+    );
+  };
+
+  const QCView = () => (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 print:hidden">
+       <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm"><h3 className="font-bold text-lg mb-4 flex items-center gap-2 text-teal-600"><Activity/> บันทึกคุณภาพน้ำ (QC)</h3><div className="space-y-4"><input className="w-full p-3 border rounded-xl" placeholder="ค่า pH (6.5-8.5)" /><input className="w-full p-3 border rounded-xl" placeholder="ค่า TDS (<500)" /><button className="w-full bg-teal-600 text-white font-bold py-3 rounded-xl">บันทึกผล</button></div></div>
+       <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm"><h3 className="font-bold text-lg mb-4 flex items-center gap-2 text-slate-600"><Wrench/> การบำรุงรักษา</h3><div className="p-3 bg-red-50 rounded-xl border border-red-100 flex justify-between items-center"><span className="text-sm font-bold text-red-700">เปลี่ยนไส้กรอง Resin</span><span className="text-xs bg-white px-2 py-1 rounded text-red-500 font-bold">ด่วน</span></div></div>
+    </div>
+  );
+
+  if (!role) return <LoginScreen onLogin={handleLogin} />;
+
+  const menuItems = role === 'admin' 
+    ? [ { id: 'dashboard', icon: <LayoutDashboard size={18}/>, label: 'ภาพรวม' }, { id: 'inventory', icon: <Database size={18}/>, label: 'คลังสินค้า' }, { id: 'crm', icon: <Users size={18}/>, label: 'ลูกค้า' }, { id: 'delivery', icon: <Truck size={18}/>, label: 'ส่งของ' }, { id: 'logistics', icon: <Calculator size={18}/>, label: 'คำนวณราคา' }, { id: 'marketing', icon: <Tag size={18}/>, label: 'การตลาด' }, { id: 'reports', icon: <FileText size={18}/>, label: 'รายงาน' }, { id: 'settings', icon: <Settings size={18}/>, label: 'ตั้งค่าราคา' }, { id: 'expenses', icon: <Receipt size={18}/>, label: 'รายจ่าย' }, { id: 'payroll', icon: <Coins size={18}/>, label: 'ค่าแรงคนขับ' }, { id: 'drivers', icon: <Truck size={18}/>, label: 'คนขับรถ' }, { id: 'qc', icon: <Activity size={18}/>, label: 'QC & ซ่อม' } ]
+    : [ { id: 'delivery', icon: <Truck size={18}/>, label: 'ส่งของ' }, { id: 'qc', icon: <Activity size={18}/>, label: 'แจ้งซ่อม/QC' } ];
+
+  return (
+    <div className="flex min-h-screen bg-slate-50 font-sans text-slate-900">
+      <aside className={`fixed inset-y-0 left-0 w-64 bg-white shadow-2xl z-50 transform transition-transform lg:translate-x-0 lg:static ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} print:hidden`}>
+        <div className="p-6"><div className="flex items-center gap-2 mb-10"><div className="w-10 h-10 bg-indigo-700 rounded-xl flex items-center justify-center text-white font-black text-xl shadow-lg"><img src="/logo.png" alt="Logo" className="h-8 w-auto" onError={(e) => {e.target.onerror = null; e.target.style.display = 'none';}}/></div><div><h1 className="font-black text-slate-800 text-lg uppercase">THIDA DAO</h1><span className="text-[10px] bg-slate-100 px-2 py-0.5 rounded text-slate-500 font-bold uppercase">{role} mode</span></div></div><nav className="space-y-1">{menuItems.map(item => (<NavItem key={item.id} icon={item.icon} label={item.label} active={activeTab === item.id} onClick={() => { setActiveTab(item.id); setIsSidebarOpen(false); }} />))}<div className="pt-8"><button onClick={() => setRole(null)} className="w-full flex items-center gap-3 p-4 rounded-xl font-bold text-red-500 hover:bg-red-50"><Lock size={18}/> <span className="text-sm">ออกจากระบบ</span></button></div></nav></div>
+      </aside>
+      <main className="flex-1 p-4 lg:p-10 overflow-y-auto print:p-0">
+        <header className="flex justify-between items-center mb-8 print:hidden"><button className="lg:hidden p-2 bg-white rounded-lg shadow" onClick={() => setIsSidebarOpen(!isSidebarOpen)}><Menu/></button><p className="text-[10px] font-black text-green-500 flex items-center gap-1 justify-end uppercase tracking-widest">🟢 System Online v13.10</p></header>
+        
+        {activeTab === 'dashboard' && <DashboardView />}
+        {activeTab === 'inventory' && <InventoryView />}
+        {activeTab === 'delivery' && <DeliveryView />}
+        {activeTab === 'crm' && <CRMView />}
+        {activeTab === 'logistics' && <LogisticsView />}
+        {activeTab === 'marketing' && <MarketingView />}
+        {activeTab === 'reports' && <ReportsView />}
+        {activeTab === 'settings' && <SettingsView />}
+        {activeTab === 'expenses' && <ExpensesView />}
+        {activeTab === 'payroll' && <PayrollView />}
+        {activeTab === 'drivers' && <DriversView />}
+        {activeTab === 'qc' && <QCView />}
+      </main>
+    </div>
+  );
+}
+
+export default App;
