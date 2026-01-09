@@ -14,8 +14,9 @@ import {
 import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
 
 // ------------------------------------------------------------------
-// {
-
+// 🔑 ส่วนตั้งค่า Firebase (นำค่า Config จากเว็บ Firebase มาวางทับตรงนี้)
+// ------------------------------------------------------------------
+const firebaseConfig = {
   apiKey: "AIzaSyCwOzO--s4GF49oxk6nAnacNoTJXwe0yf4",
 
   authDomain: "thida-dao-erp-92ca8.firebaseapp.com",
@@ -29,15 +30,6 @@ import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
   appId: "1:61860227686:web:e1567ca5458f7a68305ba7",
 
   measurementId: "G-3QZR30M5PQ"
-};
-// ------------------------------------------------------------------
-const firebaseConfig = {
-  apiKey: "AIzaSy...",
-  authDomain: "thida-dao-erp.firebaseapp.com",
-  projectId: "thida-dao-erp",
-  storageBucket: "thida-dao-erp.appspot.com",
-  messagingSenderId: "...",
-  appId: "..."
 };
 
 // Initialize Firebase
